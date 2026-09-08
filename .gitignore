@@ -1,0 +1,6 @@
+node_modules
+dist
+ledgerly.db
+uploads/*
+!uploads/.gitkeep
+.env
