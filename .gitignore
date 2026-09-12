@@ -4,3 +4,7 @@ ledgerly.db
 uploads/*
 !uploads/.gitkeep
 .env
+
+*.db-shm
+*.db-wal
+test_engine.js
