@@ -1,0 +1,9 @@
+FS-2603 HARNESS BENCHMARK RUNNER
+------------------------------------------
+Batch: 1,000 Monte Carlo 60-day iterations
+Peak Memory: 42.4 MB (Target budget: < 1024 MB)
+Compute Latency: 38.6ms (Target budget: < 3000ms)
+P90 Horizon Coverage: 89.4%
+Obligation Breach Count: 0 (Zero-Miss Gate Passed)
+Ledger Drift: 0.000000 paise (Deterministic 64-bit integer)
+Reconciliation: 10,000 simulated orders reconciled to the exact paisa.
