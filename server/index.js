@@ -9,7 +9,7 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 // Import FS-2603 Core Engines
-import { generate60DayForecast, evaluatePreTradeGuard } from "./forecastEngine.js";
+import { generate60DayForecast, evaluatePreTradeGuard } from "../src/forecastEngine.js";
 import { normalizeTransactionBatch, convertToPaise } from "./normalizationEngine.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
