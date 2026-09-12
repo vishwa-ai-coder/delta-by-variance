@@ -9,7 +9,7 @@ export default function PreTradeGuard() {
   const [obligations, setObligations] = useState([]);
   const [historicalTxs, setHistoricalTxs] = useState([]);
   const [investInput, setInvestInput] = useState(10000);
-  const [balanceInput, setBalanceInput] = useState(69000);
+  const [balanceInput, setBalanceInput] = useState(70000);
   const [guardResult, setGuardResult] = useState(null);
   const [loading, setLoading] = useState(false);
 

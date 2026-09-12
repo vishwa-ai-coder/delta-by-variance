@@ -16,6 +16,8 @@ import "./styles.css";
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
 import PreTradeGuard from './PreTradeGuard';
+import { parseAndIngestBankCSV } from './csvIngestEngine';
+import Chatbot from './Chatbot';
 
 const money = (n) => {
   const num = Number(n) || 0;
@@ -5430,6 +5432,9 @@ function Dashboard({ transactions = [], budgets = [], subscriptions = [], recurr
       {/* 5. FS-2603 Pre-Trade Guard & 60-Day Horizon */}
       <PreTradeGuard />
 
+      {/* 6. DELTA Copilot AI Chatbot */}
+      <Chatbot />
+
     </div>
   );
 }
@@ -7195,11 +7200,11 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
   const [dragActive, setDragActive] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedTag, setSelectedTag] = useState("all");
+  const [isIngesting, setIsIngesting] = useState(false);
   const fileInputRef = useRef(null);
 
-  // File Upload Handler (Simulated Client File Storage)
-  // File Upload Handler with Format & Size Restrictions
-  const handleFiles = (files) => {
+  // File Upload Handler with Format & Size Restrictions + CSV Integer Engine Ingestion
+  const handleFiles = async (files) => {
     if (!files || files.length === 0) return;
     const file = files[0];
 
@@ -7214,34 +7219,47 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
     ];
 
     // 1. Check Supported File Types
-    if (file.type && !ALLOWED_TYPES.includes(file.type)) {
-      if (setToast) {
-        setToast({ type: "error", text: "Unsupported format. Please upload PDF, PNG, JPG, CSV, or Excel files only." });
-      } else {
-        alert("Unsupported format. Please upload PDF, PNG, JPG, CSV, or Excel files only.");
-      }
+    const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type === "text/csv";
+    if (file.type && !ALLOWED_TYPES.includes(file.type) && !isCsv) {
+      const msg = "Unsupported format. Please upload PDF, PNG, JPG, CSV, or Excel files only.";
+      if (setToast) setToast({ type: "error", text: msg, message: msg });
+      else alert(msg);
       return;
     }
 
     // 2. Enforce 5MB Maximum Size Limit
     if (file.size > MAX_SIZE_MB * 1024 * 1024) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-      if (setToast) {
-        setToast({ type: "error", text: `File is too large (${fileSizeMB} MB). Maximum allowed size is ${MAX_SIZE_MB} MB.` });
-      } else {
-        alert(`File is too large (${fileSizeMB} MB). Maximum allowed size is ${MAX_SIZE_MB} MB.`);
-      }
+      const msg = `File is too large (${fileSizeMB} MB). Maximum allowed size is ${MAX_SIZE_MB} MB.`;
+      if (setToast) setToast({ type: "error", text: msg, message: msg });
+      else alert(msg);
       return;
     }
+
+    // 3. Automated Bank Statement Parsing & Integer-Paise Ingestion
+    if (isCsv) {
+      try {
+        setIsIngesting(true);
+        const result = await parseAndIngestBankCSV(file);
+        const successMsg = `Ingested ${result.count} transactions into Supabase with Integer Paise precision!`;
+        if (setToast) setToast({ type: "success", text: successMsg, message: successMsg });
+      } catch (err) {
+        console.error("CSV Ingestion Error:", err);
+        const errMsg = `CSV Ingestion failed: ${err.message}`;
+        if (setToast) setToast({ type: "error", text: errMsg, message: errMsg });
+      } finally {
+        setIsIngesting(false);
+      }
+    }
     
-    // Create local object URL for preview/download
+    // Create local object URL for preview/download & preserve Vault record
     const fileUrl = URL.createObjectURL(file);
     const newDoc = {
       id: Date.now().toString(),
       name: file.name,
       size: (file.size / 1024).toFixed(1) + " KB",
-      type: file.type || "application/octet-stream",
-      category: file.name.toLowerCase().includes("tax") ? "Tax" : file.name.toLowerCase().includes("bill") ? "Bills" : "Receipts",
+      type: file.type || (isCsv ? "text/csv" : "application/octet-stream"),
+      category: isCsv ? "Statements" : file.name.toLowerCase().includes("tax") ? "Tax" : file.name.toLowerCase().includes("bill") ? "Bills" : "Receipts",
       date: new Date().toISOString(),
       url: fileUrl
     };
@@ -7249,8 +7267,8 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
     if (addDocument) {
       addDocument(newDoc);
     }
-    if (setToast) {
-      setToast({ type: "success", text: `Uploaded "${file.name}" successfully.` });
+    if (!isCsv && setToast) {
+      setToast({ type: "success", text: `Uploaded "${file.name}" successfully.`, message: `Uploaded "${file.name}" successfully.` });
     }
   };
 
@@ -7289,7 +7307,7 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
       <div className="card glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <h2 style={{ fontSize: "1.25rem", margin: "0 0 4px 0", color: "#fff" }}>Receipt & Statement Vault</h2>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>Securely archive invoices, tax slips, and proofs of purchase.</p>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>Securely archive invoices, tax slips, and auto-ingest CSV statements.</p>
         </div>
 
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -7312,6 +7330,7 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
             style={{ background: "#090e1a", color: "#fff", border: "1px solid var(--card-border)", borderRadius: "8px", padding: "7px 12px", fontSize: "0.85rem", cursor: "pointer", outline: "none" }}
           >
             <option value="all">All Tags</option>
+            <option value="Statements">Statements</option>
             <option value="Receipts">Receipts</option>
             <option value="Bills">Bills</option>
             <option value="Tax">Tax Slips</option>
@@ -7326,7 +7345,12 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
         onDragLeave={handleDrag}
         onDragOver={handleDrag}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+        onClick={() => !isIngesting && fileInputRef.current && fileInputRef.current.click()}
+        style={{
+          border: isIngesting ? "1px dashed #00f0ff" : undefined,
+          background: isIngesting ? "rgba(0, 240, 255, 0.04)" : undefined,
+          cursor: isIngesting ? "wait" : "pointer"
+        }}
       >
         <input 
           ref={fileInputRef} 
@@ -7339,8 +7363,12 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
           <Upload size={24} color="#00f0ff" />
         </div>
         <div>
-          <b style={{ color: "#fff", fontSize: "0.95rem" }}>Click to upload or drag & drop files here</b>
-          <p style={{ margin: "4px 0 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}>Supports PDF invoices, tax statements, receipts, and spreadsheets (up to 5MB)</p>
+          <b style={{ color: "#fff", fontSize: "0.95rem" }}>
+            {isIngesting ? "Normalizing & Streaming Transactions to Supabase..." : "Click to upload or drag & drop files here"}
+          </b>
+          <p style={{ margin: "4px 0 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+            Supports PDF invoices, tax statements, receipts, and CSV statements (auto-converts to 64-bit integer paise)
+          </p>
         </div>
       </div>
 
@@ -7372,7 +7400,7 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
                   {doc.url && (
                     <a 
                       href={doc.url} 
-                      download={doc.name}
+                      download={doc.name} 
                       style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "4px" }}
                       title="Download document"
                     >
@@ -7394,7 +7422,7 @@ function Documents({ documents = [], addDocument, deleteDocument, setToast }) {
       ) : (
         <div className="card glass-card" style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--text-muted)" }}>
           <p style={{ margin: "0 0 6px 0", fontSize: "0.95rem", color: "#fff" }}>No documents in your vault</p>
-          <span style={{ fontSize: "0.8rem" }}>Drop your first invoice or receipt above to keep your tax proofs organized.</span>
+          <span style={{ fontSize: "0.8rem" }}>Drop your first invoice, receipt, or bank CSV above.</span>
         </div>
       )}
 

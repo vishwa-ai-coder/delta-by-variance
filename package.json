@@ -17,6 +17,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.468.0",
     "multer": "^1.4.5-lts.1",
+    "papaparse": "^5.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
@@ -29,4 +30,3 @@
     "vite": "^6.0.5"
   }
 }
-
