@@ -8,3 +8,7 @@ uploads/*
 *.db-shm
 *.db-wal
 test_engine.js
+
+
+.env
+ledgerly.db*
