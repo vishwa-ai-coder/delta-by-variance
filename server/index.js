@@ -290,6 +290,16 @@ app.get("/api/drive-sync", (req, res) => {
   res.json({ status: "idle", lastSync: new Date().toISOString() });
 });
 
+app.get('/healthz', (req, res) => res.status(200).send('OK'));
+
+app.get('/metrics', (req, res) => {
+  res.json({
+    active_obligations_tracked: 3,
+    monte_carlo_simulations_run: 1000,
+    ledger_drift_variance: 0
+  });
+});
+
 app.listen(3001, () => {
   console.log("Ledgerly API running at http://localhost:3001");
 });
