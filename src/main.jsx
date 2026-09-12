@@ -15,6 +15,7 @@ import {
 import "./styles.css";
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
+import PreTradeGuard from './PreTradeGuard';
 
 const money = (n) => {
   const num = Number(n) || 0;
@@ -5205,8 +5206,6 @@ function Dashboard({ transactions = [], budgets = [], subscriptions = [], recurr
   return (
     <div className="page" style={{ maxWidth: "1280px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       
-      {/* Page Header removed to prevent duplicate title */}
-      
       {/* 1. True Vitality Engine Card */}
       <div className="card glass-card" style={{ padding: "1.5rem", display: "flex", alignItems: "center", gap: "1.5rem", background: "linear-gradient(135deg, rgba(0, 240, 255, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%)", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "relative", width: "80px", height: "80px", borderRadius: "50%", background: `conic-gradient(${vitalityStats.color} ${vitalityStats.totalScore}%, rgba(255,255,255,0.05) 0)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -5427,6 +5426,10 @@ function Dashboard({ transactions = [], budgets = [], subscriptions = [], recurr
         </div>
 
       </div>
+
+      {/* 5. FS-2603 Pre-Trade Guard & 60-Day Horizon */}
+      <PreTradeGuard />
+
     </div>
   );
 }

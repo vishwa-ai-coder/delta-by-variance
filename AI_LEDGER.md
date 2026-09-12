@@ -16,3 +16,7 @@
   Model: Gemini 1.5 Pro
   Prompt: Integrate /api/forecast, /api/pre-trade-check, and /api/ingest endpoints with schema auto-migration for integer paise obligations.
   Changes: Updated server/index.js; added PRAGMA table_info migration, seeded recurring obligations, and verified live 200 OK response.
+  - Component: Pre-Trade Guard & Forecast Cone UI (FS-2603)
+  Model: Gemini 1.5 Pro
+  Prompt: Build interactive PreTradeGuard widget integrating 60-day P10/P50/P90 Recharts cone, obligations schedule, and dynamic solvency verification.
+  Changes: Created src/PreTradeGuard.jsx; integrated into Dashboard view in src/main.jsx; connected live to /api/forecast and /api/pre-trade-check.
