@@ -12,3 +12,7 @@
   Model: Gemini 1.5 Pro
   Prompt: Build data normalization engine incorporating Delta FinancialTools multi-currency rates, idempotency deduplication, merchant canonicalization, and delayed reversal pairing.
   Changes: Created server/normalizationEngine.js; verified batch cleaning of raw messy transaction inputs to integer paise.
+  - Component: API Layer & Database Migration (FS-2603)
+  Model: Gemini 1.5 Pro
+  Prompt: Integrate /api/forecast, /api/pre-trade-check, and /api/ingest endpoints with schema auto-migration for integer paise obligations.
+  Changes: Updated server/index.js; added PRAGMA table_info migration, seeded recurring obligations, and verified live 200 OK response.
