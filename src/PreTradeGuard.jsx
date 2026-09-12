@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from "recharts";
-import { Shield, ShieldAlert, CheckCircle2, AlertCircle, Calendar, Activity, Info } from "lucide-react";
+import { Shield, CheckCircle2, AlertCircle, Calendar, Activity } from "lucide-react";
+import { supabase } from './supabaseClient';
+import { generate60DayForecast, evaluatePreTradeGuard } from './forecastEngine';
 
 export default function PreTradeGuard() {
   const [forecastData, setForecastData] = useState([]);
   const [obligations, setObligations] = useState([]);
+  const [historicalTxs, setHistoricalTxs] = useState([]);
   const [investInput, setInvestInput] = useState(10000);
   const [balanceInput, setBalanceInput] = useState(69000);
   const [guardResult, setGuardResult] = useState(null);
@@ -12,48 +15,64 @@ export default function PreTradeGuard() {
 
   const money = (v) => "₹" + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
+  // 1. Fetch live data from Supabase and run local Monte Carlo projection
   useEffect(() => {
-    fetch(`/api/forecast?balancePaise=${balanceInput * 100}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          const chartPoints = data.forecast.map((f) => ({
-            day: `D+${f.day}`,
-            p10: f.p10Paise / 100,
-            p50: f.p50Paise / 100,
-            p90: f.p90Paise / 100
-          }));
-          setForecastData(chartPoints);
-          setObligations(data.obligations || []);
-        }
-      })
-      .catch((err) => console.error("Failed to load forecast:", err));
+    async function loadData() {
+      const { data: txData } = await supabase.from('transactions').select('date, amount_paise');
+      const { data: obData } = await supabase.from('obligations').select('amount_paise, due_day_offset, name');
+      
+      const txs = (txData || []).map(t => ({ date: t.date, amount: t.amount_paise }));
+      const obs = (obData || []).map(o => ({ amountPaise: o.amount_paise, dueDayOffset: o.due_day_offset, name: o.name }));
+      
+      setHistoricalTxs(txs);
+      setObligations(obs);
+
+      const forecast = generate60DayForecast({
+        currentBalancePaise: balanceInput * 100,
+        historicalTransactions: txs,
+        obligations: obs
+      });
+
+      setForecastData(forecast.map((f) => ({
+        day: `D+${f.day}`,
+        p10: f.p10Paise / 100,
+        p50: f.p50Paise / 100,
+        p90: f.p90Paise / 100
+      })));
+    }
+    loadData();
   }, [balanceInput]);
 
-  const handleCheckTrade = async () => {
+  // 2. Evaluate Trade using Local Engine
+  const handleCheckTrade = () => {
     setLoading(true);
-    try {
-      const res = await fetch("/api/pre-trade-check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proposedInvestINR: Number(investInput),
-          balanceINR: Number(balanceInput)
-        })
+    
+    setTimeout(() => {
+      const forecast = generate60DayForecast({
+        currentBalancePaise: balanceInput * 100,
+        historicalTransactions: historicalTxs,
+        obligations
       });
-      const data = await res.json();
-      setGuardResult(data);
-    } catch (err) {
-      console.error("Guard check failed:", err);
-    } finally {
+
+      const result = evaluatePreTradeGuard({
+        proposedInvestPaise: investInput * 100,
+        currentBalancePaise: balanceInput * 100,
+        forecast,
+        obligations
+      });
+
+      setGuardResult({
+        ...result,
+        proposedInvestINR: investInput,
+        safeMaxInvestINR: result.safeMaxInvestPaise / 100
+      });
       setLoading(false);
-    }
+    }, 400); // UI feel delay
   };
 
   return (
     <div className="card glass-card" style={{ padding: "1.75rem", display: "flex", flexDirection: "column", gap: "2rem", marginTop: "1rem" }}>
       
-      {/* 1. Header Section */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "1.25rem" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
@@ -67,16 +86,14 @@ export default function PreTradeGuard() {
           </p>
         </div>
         <div style={{ background: "rgba(0, 240, 255, 0.08)", border: "1px solid rgba(0, 240, 255, 0.2)", color: "#00f0ff", padding: "6px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
-          <span>Integer Paise Engine</span>
+          <span>Integer Paise Engine (Edge)</span>
         </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.8fr", gap: "2.5rem" }}>
         
-        {/* LEFT COLUMN: Controls & Verdict */}
+        {/* Left Column */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          
-          {/* Inputs */}
           <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "12px", padding: "1.25rem", border: "1px solid rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             
             <div>
@@ -116,29 +133,22 @@ export default function PreTradeGuard() {
               style={{ background: loading ? "#1e293b" : "linear-gradient(135deg, #00f0ff 0%, #0284c7 100%)", color: loading ? "var(--text-muted)" : "#fff", border: "none", padding: "12px", borderRadius: "8px", fontWeight: "700", fontSize: "0.9rem", cursor: loading ? "not-allowed" : "pointer", transition: "all 0.2s ease", display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", boxShadow: loading ? "none" : "0 4px 12px rgba(0, 240, 255, 0.2)" }}
             >
               {loading ? <Activity size={18} className="spin" /> : <Shield size={18} />}
-              {loading ? "Running Monte Carlo..." : "Evaluate Trade Safety"}
+              {loading ? "Running Local Engine..." : "Evaluate Trade Safety"}
             </button>
           </div>
 
-          {/* Dynamic Verdict Card */}
           {guardResult && (
             <div style={{ background: guardResult.approved ? "rgba(16, 185, 129, 0.05)" : "rgba(239, 68, 68, 0.05)", border: `1px solid ${guardResult.approved ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`, borderRadius: "12px", padding: "1.25rem", position: "relative", overflow: "hidden" }}>
               <div style={{ position: "absolute", top: 0, left: 0, width: "4px", height: "100%", background: guardResult.approved ? "#10b981" : "#ef4444" }} />
-              
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                 <span style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
-                  {guardResult.approved ? <CheckCircle2 size={14} color="#10b981"/> : <AlertCircle size={14} color="#ef4444"/>}
-                  Verification Status
+                  {guardResult.approved ? <CheckCircle2 size={14} color="#10b981"/> : <AlertCircle size={14} color="#ef4444"/>} Verification Status
                 </span>
                 <span style={{ color: guardResult.approved ? "#10b981" : "#ef4444", fontWeight: "800", fontSize: "0.85rem", background: guardResult.approved ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)", padding: "4px 8px", borderRadius: "6px" }}>
                   {guardResult.approved ? "PASSED (SOLVENT)" : "REJECTED (BREACH)"}
                 </span>
               </div>
-              
-              <p style={{ margin: "8px 0", fontSize: "0.85rem", color: "#e2e8f0", lineHeight: "1.5" }}>
-                {guardResult.reason}
-              </p>
-              
+              <p style={{ margin: "8px 0", fontSize: "0.85rem", color: "#e2e8f0", lineHeight: "1.5" }}>{guardResult.reason}</p>
               <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Safe Solvency Ceiling</span>
                 <strong style={{ color: "#fff", fontSize: "1.1rem" }}>{money(guardResult.safeMaxInvestINR)}</strong>
@@ -146,7 +156,6 @@ export default function PreTradeGuard() {
             </div>
           )}
 
-          {/* Obligations Schedule List */}
           <div>
             <h4 style={{ margin: "0 0 12px 0", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
               <Calendar size={14} /> Locked Obligations
@@ -164,19 +173,18 @@ export default function PreTradeGuard() {
               ))}
             </div>
           </div>
-
         </div>
 
-        {/* RIGHT COLUMN: Forecast Chart */}
+        {/* Right Column */}
         <div style={{ display: "flex", flexDirection: "column", background: "rgba(0,0,0,0.15)", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.03)", padding: "1.25rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
             <span style={{ fontSize: "0.85rem", color: "#e2e8f0", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" }}>
               <Activity size={16} color="#a855f7" /> Liquidity Horizon (60 Days)
             </span>
             <div style={{ display: "flex", gap: "12px", fontSize: "0.7rem", color: "var(--text-muted)" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00f0ff" }}/> P90 (Opt)</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#38bdf8" }}/> P50 (Med)</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#a855f7" }}/> P10 (Worst)</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#00f0ff" }}/> P90</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#38bdf8" }}/> P50</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#a855f7" }}/> P10</span>
             </div>
           </div>
 
@@ -185,23 +193,16 @@ export default function PreTradeGuard() {
               <AreaChart data={forecastData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="p90Grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#00f0ff" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.2} /><stop offset="95%" stopColor="#00f0ff" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="p10Grad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.2} /><stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                 <XAxis dataKey="day" stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} interval={9} />
                 <YAxis stroke="var(--text-muted)" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
-                <Tooltip
-                  contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "0.8rem", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }}
-                  itemStyle={{ fontSize: "0.85rem", fontWeight: "600" }}
-                  formatter={(v, name) => [money(v), name.toUpperCase()]}
-                  labelStyle={{ color: "var(--text-muted)", marginBottom: "4px" }}
-                />
+                <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "8px", fontSize: "0.8rem", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }} itemStyle={{ fontSize: "0.85rem", fontWeight: "600" }} formatter={(v, name) => [money(v), name.toUpperCase()]} labelStyle={{ color: "var(--text-muted)", marginBottom: "4px" }} />
                 <ReferenceLine y={0} stroke="#ef4444" strokeDasharray="3 3" opacity={0.5} />
                 <Area type="stepAfter" dataKey="p90" stroke="#00f0ff" fill="url(#p90Grad)" strokeWidth={2} name="p90" />
                 <Area type="stepAfter" dataKey="p50" stroke="#38bdf8" fill="transparent" strokeWidth={1.5} strokeDasharray="4 4" name="p50" />
